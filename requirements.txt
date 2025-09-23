@@ -1,0 +1,24 @@
+# Core GUI Framework
+PyQt6>=6.5.0
+
+# Computer Vision and ML
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Image Processing
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# Data Processing
+matplotlib>=3.7.0
+scipy>=1.10.0
+
+# Utilities
+PyYAML>=6.0
+requests>=2.31.0
+psutil>=5.9.0
+
+# File handling
+pathlib2>=2.3.7; python_version < "3.4"
