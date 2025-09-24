@@ -6,11 +6,55 @@ import numpy as np
 from PIL import Image
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, 
                              QWidget, QPushButton, QLabel, QFileDialog, QMessageBox,
-                             QScrollArea, QFrame, QComboBox)
+                             QScrollArea, QFrame, QComboBox, QProgressDialog)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QPixmap, QPainter, QPen, QColor, QFont
 from ultralytics import YOLO
 import torch
+
+try:
+    from huggingface_hub import hf_hub_download
+    HF_AVAILABLE = True
+except ImportError:
+    HF_AVAILABLE = False
+
+
+class ModelDownloadThread(QThread):
+    """Thread for downloading model from Hugging Face without blocking the UI"""
+    download_complete = pyqtSignal(str)  # model_path
+    download_progress = pyqtSignal(str)  # progress_message
+    error_occurred = pyqtSignal(str)
+    
+    def __init__(self, repo_id="haydarkadioglu/brand-eye", filename="brandeye.pt", local_dir="model"):
+        super().__init__()
+        self.repo_id = repo_id
+        self.filename = filename
+        self.local_dir = local_dir
+    
+    def run(self):
+        try:
+            self.download_progress.emit("Connecting to Hugging Face...")
+            
+            if not HF_AVAILABLE:
+                raise ImportError("huggingface_hub is not installed. Please install with: pip install huggingface_hub")
+            
+            self.download_progress.emit("Downloading model from Hugging Face...")
+            
+            # Create directory if it doesn't exist
+            os.makedirs(self.local_dir, exist_ok=True)
+            
+            # Download model
+            model_path = hf_hub_download(
+                repo_id=self.repo_id,
+                filename=self.filename,
+                local_dir=self.local_dir,
+                local_dir_use_symlinks=False
+            )
+            
+            self.download_complete.emit(model_path)
+            
+        except Exception as e:
+            self.error_occurred.emit(str(e))
 
 
 class YOLOInferenceThread(QThread):
@@ -332,11 +376,93 @@ class YOLODetectionApp(QMainWindow):
         return frame
     
     def check_model_exists(self):
-        """Check if the YOLO model file exists"""
+        """Check if the YOLO model file exists, if not offer to download from Hugging Face"""
         if not os.path.exists(self.model_path):
-            QMessageBox.warning(self, "Model Not Found", 
-                              f"YOLO model file not found: {self.model_path}\n"
-                              "Please ensure the model file is in the correct location.")
+            reply = QMessageBox.question(
+                self, 
+                "Model Not Found", 
+                f"YOLO model file not found: {self.model_path}\n\n"
+                "Would you like to download the pre-trained model from Hugging Face?\n"
+                "(https://huggingface.co/haydarkadioglu/brand-eye)",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                self.download_model_from_hf()
+            else:
+                QMessageBox.information(
+                    self, 
+                    "Manual Setup Required", 
+                    "Please place your trained model file at:\n" + self.model_path
+                )
+    
+    def download_model_from_hf(self):
+        """Download model from Hugging Face"""
+        if not HF_AVAILABLE:
+            QMessageBox.critical(
+                self, 
+                "Dependency Missing", 
+                "huggingface_hub is required to download the model.\n\n"
+                "Please install it with:\npip install huggingface_hub\n\n"
+                "Then restart the application."
+            )
+            return
+        
+        # Show progress dialog
+        self.progress_dialog = QProgressDialog("Downloading model from Hugging Face...", "Cancel", 0, 0, self)
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.progress_dialog.setMinimumDuration(0)
+        self.progress_dialog.setValue(0)
+        self.progress_dialog.show()
+        
+        # Start download thread
+        self.download_thread = ModelDownloadThread()
+        self.download_thread.download_complete.connect(self.on_download_complete)
+        self.download_thread.download_progress.connect(self.on_download_progress)
+        self.download_thread.error_occurred.connect(self.on_download_error)
+        self.download_thread.start()
+        
+        # Connect cancel button
+        self.progress_dialog.canceled.connect(self.download_thread.terminate)
+    
+    def on_download_complete(self, model_path):
+        """Handle successful model download"""
+        self.progress_dialog.close()
+        
+        # Update model path to use the downloaded model
+        if os.path.exists(os.path.join("model", "brandeye.pt")):
+            self.model_path = os.path.join("model", "brandeye.pt")
+        elif os.path.exists(model_path):
+            self.model_path = model_path
+        
+        QMessageBox.information(
+            self, 
+            "Download Complete", 
+            f"Model downloaded successfully!\n\n"
+            f"Saved to: {self.model_path}\n\n"
+            "You can now start detecting objects."
+        )
+        
+        self.status_label.setText("Model downloaded successfully - Ready to detect objects")
+    
+    def on_download_progress(self, message):
+        """Handle download progress updates"""
+        self.progress_dialog.setLabelText(message)
+    
+    def on_download_error(self, error_message):
+        """Handle download error"""
+        self.progress_dialog.close()
+        
+        QMessageBox.critical(
+            self, 
+            "Download Failed", 
+            f"Failed to download model from Hugging Face:\n\n{error_message}\n\n"
+            "Please check your internet connection or manually place the model file at:\n"
+            f"{self.model_path}"
+        )
+        
+        self.status_label.setText("Model download failed")
     
     def select_image(self):
         """Open file dialog to select an image"""

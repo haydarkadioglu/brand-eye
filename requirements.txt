@@ -7,6 +7,9 @@ opencv-python>=4.8.0
 torch>=2.0.0
 torchvision>=0.15.0
 
+# Model Management
+huggingface_hub>=0.16.0
+
 # Image Processing
 Pillow>=10.0.0
 numpy>=1.24.0
