@@ -29,7 +29,7 @@ Brand Eye combines cutting-edge hybrid AI architecture (YOLO+MobileNet) with int
 
 1. **Clone Repository**
 ```bash
-git clone <repository-url>
+git clone https://github.com/haydarkadioglu/brand-eye
 cd brand-eye
 ```
 
